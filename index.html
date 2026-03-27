@@ -230,7 +230,7 @@
 
         /* ─── CONTENT LAYOUT ─── */
         .content-grid { display:grid; grid-template-columns:1fr; gap:1.25rem; align-items:start; }
-        .content-main { min-width:0; }
+        .content-main { min-width:0; content-visibility:auto; contain-intrinsic-size:auto 800px; }
         .content-side { position:sticky; top:60px; }
 
         /* ─── STATS BAR ─── */
@@ -341,6 +341,9 @@
         .result-actions{display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem;}
         .action-btn-result{display:inline-flex;align-items:center;gap:.35rem;padding:.45rem .85rem;border-radius:var(--radius-sm);font-size:.8rem;font-weight:600;cursor:pointer;border:1.5px solid var(--border-2);background:var(--card);color:var(--text-2);transition:var(--transition);font-family:inherit;}
         .action-btn-result:hover{border-color:var(--primary-light);color:var(--primary);background:rgba(45,109,163,.04);}
+
+        /* ─── FOCUS VISIBLE ─── */
+        a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--primary-light);outline-offset:2px;}
     </style>
 </head>
 <body>
@@ -353,8 +356,8 @@
             <div class="nav-title">Law<span>Finder</span></div>
         </a>
         <div class="nav-actions">
-            <button class="dark-toggle nav-btn" onclick="toggleDark()" title="다크모드">🌙</button>
-            <button class="nav-btn" onclick="toggleBookmarks()">⭐ 저장목록</button>
+            <button class="dark-toggle nav-btn" onclick="toggleDark()" title="다크모드" aria-label="다크모드 전환" aria-pressed="false">🌙</button>
+            <button class="nav-btn" onclick="toggleBookmarks()" aria-label="저장된 판례 목록 보기">⭐ 저장목록</button>
         </div>
     </div>
 </nav>
@@ -394,7 +397,7 @@
     <!-- 상단 광고 -->
     <div class="ad-banner ad-banner-lg" style="margin-top:1rem;">
         <div class="ad-label">AD</div>
-        <iframe src="https://ads-partners.coupang.com/widgets.html?id=862498&template=carousel&trackingCode=AF7220529&subId=lawfinder&width=680&height=70&ts498" width="100%" height="70" frameborder="0" scrolling="no" referrerpolicy="unsafe-url" style="max-width:728px;margin:0 auto;display:block;"></iframe>
+        <iframe src="https://ads-partners.coupang.com/widgets.html?id=862498&template=carousel&trackingCode=AF7220529&subId=lawfinder&width=680&height=70&ts498" width="100%" height="70" frameborder="0" scrolling="no" referrerpolicy="unsafe-url" loading="lazy" style="max-width:728px;margin:0 auto;display:block;"></iframe>
     </div>
 
     <div class="toast" id="toast"></div>
@@ -428,7 +431,7 @@
         <div class="loader-text" id="loaderText">분석 중...</div>
     </div>
 
-    <div class="content-grid" id="resultsSection" style="display:none">
+    <div class="content-grid" id="resultsSection" style="display:none" aria-live="polite" aria-label="검색 결과">
         <div class="content-main">
             <div class="results">
                 <div class="results-head">
@@ -458,10 +461,10 @@
                 <button class="modal-x" onclick="closeModal()">&times;</button>
             </div>
         </div>
-        <div class="tabs" id="modalTabs">
-            <button class="tab active" onclick="switchTab(0)">판결 정보</button>
-            <button class="tab" onclick="switchTab(1)">판례 내용</button>
-            <button class="tab" onclick="switchTab(2)">심급 이력</button>
+        <div class="tabs" id="modalTabs" role="tablist" aria-label="판례 상세 탭">
+            <button class="tab active" role="tab" aria-selected="true" onclick="switchTab(0)">판결 정보</button>
+            <button class="tab" role="tab" aria-selected="false" onclick="switchTab(1)">판례 내용</button>
+            <button class="tab" role="tab" aria-selected="false" onclick="switchTab(2)">심급 이력</button>
         </div>
         <div id="tabPanels">
             <div class="tab-content active" id="tabInfo"></div>
@@ -475,12 +478,12 @@
 <div class="container" style="margin-top:1rem;">
     <div class="ad-banner ad-banner-lg">
         <div class="ad-label">AD</div>
-        <iframe src="https://ads-partners.coupang.com/widgets.html?id=862498&template=carousel&trackingCode=AF7220529&subId=lawfinder&width=680&height=70&ts498" width="100%" height="70" frameborder="0" scrolling="no" referrerpolicy="unsafe-url" style="max-width:728px;margin:0 auto;display:block;"></iframe>
+        <iframe src="https://ads-partners.coupang.com/widgets.html?id=862498&template=carousel&trackingCode=AF7220529&subId=lawfinder&width=680&height=70&ts498" width="100%" height="70" frameborder="0" scrolling="no" referrerpolicy="unsafe-url" loading="lazy" style="max-width:728px;margin:0 auto;display:block;"></iframe>
     </div>
 </div>
 
 <!-- SCROLL TO TOP -->
-<button class="scroll-top" id="scrollTop" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑</button>
+<button class="scroll-top" id="scrollTop" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="맨 위로 이동">↑</button>
 
 <!-- FOOTER -->
 <footer class="footer">
@@ -522,11 +525,11 @@ const _KEYS = {
 
 document.addEventListener('DOMContentLoaded', () => {
     // Auto-set keys from obfuscated values
-    localStorage.setItem('lawApiOC', _KEYS.law);
-    localStorage.setItem('openaiKey', _KEYS.ai);
+    try { localStorage.setItem('lawApiOC', _KEYS.law); } catch(e) {}
+    try { localStorage.setItem('openaiKey', _KEYS.ai); } catch(e) {}
     renderHistory();
     // Dark mode restore
-    if(localStorage.getItem('darkMode')==='true') document.body.classList.add('dark');
+    try { if(localStorage.getItem('darkMode')==='true') document.body.classList.add('dark'); } catch(e) {}
     updateDarkBtn();
     // Keyboard
     document.addEventListener('keydown', e => { if(e.key==='Escape') closeModal(); });
@@ -560,7 +563,8 @@ function hideLoading() { document.getElementById('loader').classList.remove('vis
 function log(m, d) { console.log(`[LF] ${m}`, d !== undefined ? d : ''); }
 function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 function cleanJson(s) {
-  let t = s.replace(/```(?:json)?\s*/gi,'').replace(/\s*```/gi,'').trim();
+  if (s == null) return '[]';
+  let t = String(s).replace(/```(?:json)?\s*/gi,'').replace(/\s*```/gi,'').trim();
   // 앞뒤 불필요한 텍스트 제거
   const arrStart = t.indexOf('['), arrEnd = t.lastIndexOf(']');
   const objStart = t.indexOf('{'), objEnd = t.lastIndexOf('}');
@@ -585,12 +589,14 @@ function fillExample(el) { document.getElementById('searchInput').value = el.tex
 // ─── Dark Mode ───
 function toggleDark() {
     document.body.classList.toggle('dark');
-    localStorage.setItem('darkMode', document.body.classList.contains('dark'));
+    const isDark = document.body.classList.contains('dark');
+    try { localStorage.setItem('darkMode', isDark); } catch(e) {}
     updateDarkBtn();
 }
 function updateDarkBtn() {
     const btn = document.querySelector('.dark-toggle');
-    if(btn) btn.textContent = document.body.classList.contains('dark') ? '☀️' : '🌙';
+    const isDark = document.body.classList.contains('dark');
+    if(btn) { btn.textContent = isDark ? '☀️' : '🌙'; btn.setAttribute('aria-pressed', isDark ? 'true' : 'false'); }
 }
 
 // ─── Progress Steps ───
@@ -604,8 +610,8 @@ function setStep(n) {
 }
 
 // ─── Bookmarks ───
-function getBookmarks() { return JSON.parse(localStorage.getItem('bookmarks')||'[]'); }
-function saveBookmarks(bm) { localStorage.setItem('bookmarks', JSON.stringify(bm)); }
+function getBookmarks() { try { return JSON.parse(localStorage.getItem('bookmarks')||'[]'); } catch(e) { return []; } }
+function saveBookmarks(bm) { try { localStorage.setItem('bookmarks', JSON.stringify(bm)); } catch(e) {} }
 function addBookmark(caseData) {
     const bm = getBookmarks();
     if(bm.some(b=>b.serialNo===caseData.serialNo)) return;
@@ -670,12 +676,12 @@ function sortResults(type) {
 
 // ─── History ───
 function addToHistory(q) {
-    let h = JSON.parse(localStorage.getItem('searchHistory')||'[]');
+    let h; try { h = JSON.parse(localStorage.getItem('searchHistory')||'[]'); } catch(e) { h = []; }
     h = h.filter(x=>x!==q); h.unshift(q); if(h.length>8) h=h.slice(0,8);
-    localStorage.setItem('searchHistory', JSON.stringify(h)); renderHistory();
+    try { localStorage.setItem('searchHistory', JSON.stringify(h)); } catch(e) {} renderHistory();
 }
 function renderHistory() {
-    const h = JSON.parse(localStorage.getItem('searchHistory')||'[]');
+    let h; try { h = JSON.parse(localStorage.getItem('searchHistory')||'[]'); } catch(e) { h = []; }
     const s = document.getElementById('historySection'), l = document.getElementById('historyList');
     if(!h.length){ s.style.display='none'; return; }
     s.style.display='block';
@@ -695,10 +701,11 @@ function addKw(e) { if(e.key==='Enter'&&e.target.value.trim()){ currentKeywords.
 
 // ─── Tabs ───
 function switchTab(idx) {
-    document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',i===idx));
+    document.querySelectorAll('.tab').forEach((t,i)=>{t.classList.toggle('active',i===idx);t.setAttribute('aria-selected',i===idx?'true':'false');});
     document.querySelectorAll('.tab-content').forEach((p,i)=>p.classList.toggle('active',i===idx));
 }
-function closeModal() { document.getElementById('modalBg').classList.remove('open'); document.body.style.overflow=''; }
+let _prevFocusEl = null;
+function closeModal() { document.getElementById('modalBg').classList.remove('open'); document.body.style.overflow=''; if(_prevFocusEl){try{_prevFocusEl.focus();}catch(e){}} _prevFocusEl=null; }
 
 // ═══════════════════════════════════════
 //  NETWORK
@@ -755,11 +762,14 @@ async function searchByCaseNo(oc, caseNo) {
 //  AI — NATURAL LANGUAGE CASE ANALYSIS
 // ═══════════════════════════════════════
 async function analyzeUserCase(text) {
-    const key = localStorage.getItem('openaiKey');
+    let key; try { key = localStorage.getItem('openaiKey'); } catch(e) {}
     if(!key){ showError('OpenAI API 키를 먼저 설정해 주세요.'); return null; }
 
     async function attemptAnalyze() {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
         const r = await fetch('https://api.openai.com/v1/chat/completions', {
+            signal: controller.signal,
             method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${key}`},
             body: JSON.stringify({ model:'gpt-4o-mini', temperature:.3, max_tokens:600, messages:[
                 { role:'system', content:`당신은 한국 법률 전문가이자 판례 검색 전문가입니다.
@@ -791,6 +801,7 @@ searchQueries 생성 규칙 (8~12개):
                 { role:'user', content: text }
             ]})
         });
+        clearTimeout(timeoutId);
         if(!r.ok){
             const e=await r.json().catch(()=>({}));
             throw { message: classifyError(e.error || {}, r.status), status: r.status };
@@ -915,7 +926,7 @@ function handleDirectSearch() {
 }
 
 async function smartSearch(analysis, originalInput) {
-    const oc = localStorage.getItem('lawApiOC');
+    let oc; try { oc = localStorage.getItem('lawApiOC'); } catch(e) {}
     if(!oc){ showError('법령정보 API ID를 먼저 설정해 주세요.'); hideLoading(); return; }
 
     // 검색 전략: AI가 생성한 다양한 검색어 + 원문 자연어도 포함
@@ -1072,8 +1083,22 @@ async function openDetailModal(data) {
     // ─── Tab 2: 심급 이력 (placeholder) ───
     document.getElementById('tabTimeline').innerHTML = `<div class="tl-loading">이 사건의 심급 이력을 검색하고 있습니다...</div>`;
 
+    _prevFocusEl = document.activeElement;
     document.getElementById('modalBg').classList.add('open');
     document.body.style.overflow = 'hidden';
+    // Focus trap: move focus into modal
+    setTimeout(()=>{const x=document.querySelector('.modal-x');if(x)x.focus();},100);
+    // Focus trap handler
+    document.getElementById('modalBg').addEventListener('keydown', function _trap(e){
+      if(e.key!=='Tab') return;
+      const modal=document.querySelector('.modal');
+      if(!modal) return;
+      const focusable=modal.querySelectorAll('button,a,[tabindex]:not([tabindex="-1"]),input,textarea,select');
+      if(!focusable.length) return;
+      const first=focusable[0],last=focusable[focusable.length-1];
+      if(e.shiftKey){if(document.activeElement===first){e.preventDefault();last.focus();}}
+      else{if(document.activeElement===last){e.preventDefault();first.focus();}}
+    });
 
     // ─── Async: AI analysis ───
     analyzeFullCase(fullText, userDescription).then(analysis => {
