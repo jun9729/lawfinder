@@ -332,6 +332,15 @@
         /* ─── COPY TOAST ─── */
         .copy-btn { background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:.3rem .65rem; font-size:.75rem; cursor:pointer; font-family:inherit; color:var(--text-2); transition:var(--transition); display:inline-flex; align-items:center; gap:.25rem; }
         .copy-btn:hover { border-color:var(--primary-light); }
+
+        /* ─── BUTTON LOADING SPINNER ─── */
+        .btn-loading{pointer-events:none;opacity:0.7;}
+        .btn-loading::after{content:'';display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite;margin-left:6px;vertical-align:middle;}
+
+        /* ─── PDF / SHARE BUTTONS ─── */
+        .result-actions{display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem;}
+        .action-btn-result{display:inline-flex;align-items:center;gap:.35rem;padding:.45rem .85rem;border-radius:var(--radius-sm);font-size:.8rem;font-weight:600;cursor:pointer;border:1.5px solid var(--border-2);background:var(--card);color:var(--text-2);transition:var(--transition);font-family:inherit;}
+        .action-btn-result:hover{border-color:var(--primary-light);color:var(--primary);background:rgba(45,109,163,.04);}
     </style>
 </head>
 <body>
@@ -424,6 +433,9 @@
             <div class="results">
                 <div class="results-head">
                     <div class="results-count" id="resultsHeader"></div>
+                    <div class="result-actions" id="resultActions" style="display:none;">
+                        <button class="action-btn-result" onclick="printResults()">🖨️ 인쇄 / PDF 저장</button>
+                    </div>
                 </div>
                 <div id="resultsList"></div>
             </div>
@@ -441,6 +453,7 @@
             <h2 id="modalTitle"></h2>
             <div style="display:flex;gap:.4rem;align-items:center;">
                 <button class="bm-btn" id="modalBmBtn" onclick="toggleBookmarkCurrent()" title="저장">☆</button>
+                <button class="copy-btn" onclick="shareCase()" style="color:#fff;background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.2);">🔗 공유</button>
                 <button class="copy-btn" onclick="copyCurrentCase()" style="color:#fff;background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.2);">📋 복사</button>
                 <button class="modal-x" onclick="closeModal()">&times;</button>
             </div>
@@ -865,7 +878,8 @@ async function handleSearch() {
     const input = document.getElementById('searchInput').value.trim();
     if(!input) return;
     userDescription = input;
-    const btn = document.getElementById('btnSearch'); btn.disabled=true;
+    const btn = document.getElementById('btnSearch'); btn.disabled=true; btn.classList.add('btn-loading');
+    const origBtnText = btn.textContent; btn.textContent = '검색 중...';
     const searchTextarea = document.getElementById('searchInput'); searchTextarea.disabled=true;
     try {
         document.getElementById('guideSection').style.display='none';
@@ -883,7 +897,7 @@ async function handleSearch() {
         // Step 2: 다양한 검색어로 넓게 후보 수집
         await smartSearch(analysis, input);
     } catch(err){ showError('분석 실패: '+(err.message || classifyError(err, err.status))); hideLoading(); }
-    finally{ btn.disabled=false; document.getElementById('searchInput').disabled=false; }
+    finally{ btn.disabled=false; btn.classList.remove('btn-loading'); btn.textContent='AI 판례 검색'; document.getElementById('searchInput').disabled=false; }
 }
 
 function handleDirectSearch() {
@@ -952,6 +966,7 @@ function renderResults(items, ai) {
     lastItems = items; lastAi = ai; currentSort = 'score';
     const sec = document.getElementById('resultsSection'), hdr = document.getElementById('resultsHeader'), list = document.getElementById('resultsList');
     sec.style.display = 'grid';
+    document.getElementById('resultActions').style.display = items.length ? 'flex' : 'none';
     if(!items.length){
         hdr.innerHTML='';
         const suggestKeywords = ai?.searchQueries ? ai.searchQueries.slice(0, 4).map(q => `<span class="example-chip" style="margin:4px 2px;cursor:pointer" onclick="document.getElementById('searchInput').value='${q.replace(/'/g,"\\'")}';handleSearch()">${q}</span>`).join('') : '';
@@ -1341,6 +1356,30 @@ function renderTimeline(trials, currentCaseNo) {
             }).join('')}
         </div>
     `;
+}
+
+// ===== PDF / Print =====
+function printResults() {
+    window.print();
+}
+
+// ===== Share Case (modal) =====
+function shareCase() {
+    const title = document.getElementById('modalTitle').textContent || '';
+    const text = 'LawFinder 판례: ' + title + '\n' + window.location.href;
+    if (navigator.share) {
+        navigator.share({ title: 'LawFinder 판례', text: text, url: window.location.href }).catch(function(){});
+    } else if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(function() {
+            showError('📋 판례 정보가 클립보드에 복사되었습니다!');
+            const t = document.getElementById('toast');
+            t.style.background = 'var(--success-bg)';
+            t.style.color = 'var(--success)';
+            t.style.borderColor = '#a7f3d0';
+        }).catch(function() {
+            showError('복사에 실패했습니다.');
+        });
+    }
 }
 </script>
 </body>
