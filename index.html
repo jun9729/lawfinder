@@ -546,7 +546,26 @@ function showLoading(text) { document.getElementById('loaderText').textContent =
 function hideLoading() { document.getElementById('loader').classList.remove('visible'); }
 function log(m, d) { console.log(`[LF] ${m}`, d !== undefined ? d : ''); }
 function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
-function cleanJson(s) { return s.replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'').trim(); }
+function cleanJson(s) {
+  let t = s.replace(/```(?:json)?\s*/gi,'').replace(/\s*```/gi,'').trim();
+  // 앞뒤 불필요한 텍스트 제거
+  const arrStart = t.indexOf('['), arrEnd = t.lastIndexOf(']');
+  const objStart = t.indexOf('{'), objEnd = t.lastIndexOf('}');
+  if (arrStart !== -1 && arrEnd !== -1 && (objStart === -1 || arrStart <= objStart)) {
+    t = t.substring(arrStart, arrEnd + 1);
+  } else if (objStart !== -1 && objEnd !== -1) {
+    t = t.substring(objStart, objEnd + 1);
+  }
+  return t;
+}
+function classifyError(err, status) {
+  if (!navigator.onLine) return '네트워크 연결이 끊어졌습니다. 인터넷 연결을 확인해주세요.';
+  if (status === 429) return 'API 요청이 너무 많습니다. 잠시 후 다시 시도해주세요. (Rate Limit)';
+  if (status === 401 || status === 403) return 'API 키가 유효하지 않습니다. 관리자에게 문의하세요.';
+  if (status === 500 || status === 502 || status === 503) return 'AI 서버에 일시적 문제가 발생했습니다. 잠시 후 다시 시도해주세요.';
+  if (err && err.message && err.message.includes('Failed to fetch')) return '네트워크 오류가 발생했습니다. 인터넷 연결을 확인해주세요.';
+  return err?.message || '알 수 없는 오류가 발생했습니다.';
+}
 function fmtDate(d) { const s = String(d||''); return s.length===8 ? `${s.slice(0,4)}.${s.slice(4,6)}.${s.slice(6,8)}` : s||'-'; }
 function fillExample(el) { document.getElementById('searchInput').value = el.textContent; handleSearch(); }
 
@@ -725,16 +744,21 @@ async function searchByCaseNo(oc, caseNo) {
 async function analyzeUserCase(text) {
     const key = localStorage.getItem('openaiKey');
     if(!key){ showError('OpenAI API 키를 먼저 설정해 주세요.'); return null; }
-    const r = await fetch('https://api.openai.com/v1/chat/completions', {
-        method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${key}`},
-        body: JSON.stringify({ model:'gpt-4o-mini', temperature:.3, max_tokens:600, messages:[
-            { role:'system', content:`당신은 한국 법률 전문가이자 판례 검색 전문가입니다.
+
+    async function attemptAnalyze() {
+        const r = await fetch('https://api.openai.com/v1/chat/completions', {
+            method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${key}`},
+            body: JSON.stringify({ model:'gpt-4o-mini', temperature:.3, max_tokens:600, messages:[
+                { role:'system', content:`당신은 한국 법률 전문가이자 판례 검색 전문가입니다.
 사용자가 자연어로 설명한 사건을 분석하여, 한국 법령정보 판례 검색 API에서 유사한 판례를 최대한 많이 찾을 수 있도록 다양한 검색 전략을 세워주세요.
+
+반드시 먼저 이 사건이 민사/형사/행정 중 어디에 해당하는지 판단하고, 해당 분야에 특화된 검색어를 생성하세요.
 
 JSON만 응답:
 {
   "crime": "사건의 정식 법률 명칭",
   "statute": "관련 법조항",
+  "caseType": "민사/형사/행정 구분",
   "summary": "사건을 법률적으로 정리한 1-2문장",
   "searchQueries": ["검색어1", "검색어2", ..., "검색어N"]
 }
@@ -748,14 +772,30 @@ searchQueries 생성 규칙 (8~12개):
 6. 피해자 관점 (예: "주거 피해", "절도 피해 손해배상")
 7. 민사적 관점 (예: "절도 손해배상", "불법침입 위자료")
 8. 핵심 상황 키워드 조합 (예: "야간 침입 재물")
+9. 민사/형사/행정 분야별 특화 검색어 (형사면 죄명 중심, 민사면 청구원인 중심, 행정이면 처분유형 중심)
 
 다양한 각도에서 검색해야 비슷한 사건을 놓치지 않습니다.` },
-            { role:'user', content: text }
-        ]})
-    });
-    if(!r.ok){ const e=await r.json().catch(()=>({})); throw new Error(e.error?.message||'AI 호출 실패'); }
-    const d = await r.json();
-    return JSON.parse(cleanJson(d.choices[0].message.content.trim()));
+                { role:'user', content: text }
+            ]})
+        });
+        if(!r.ok){
+            const e=await r.json().catch(()=>({}));
+            throw { message: classifyError(e.error || {}, r.status), status: r.status };
+        }
+        const d = await r.json();
+        return JSON.parse(cleanJson(d.choices[0].message.content.trim()));
+    }
+
+    try {
+        return await attemptAnalyze();
+    } catch(err) {
+        // JSON 파싱 실패 시 1회 재시도
+        if (err instanceof SyntaxError) {
+            log('AI 분석 JSON 파싱 실패, 재시도...');
+            return await attemptAnalyze();
+        }
+        throw err;
+    }
 }
 
 // ═══════════════════════════════════════
@@ -778,11 +818,12 @@ async function aiRerank(userInput, cases, caseSummary) {
 
 사용자가 설명한 사건과 각 판례의 **실제 사건 내용(사실관계, 상황, 맥락)**이 얼마나 비슷한지 판단하세요.
 
-[핵심 기준 — 키워드가 아니라 사건의 스토리를 비교하세요]
-- 동일한 상황인가? (예: 둘 다 "집에 침입해서 물건을 훔친" 사건인가?)
-- 가해자/피해자의 관계와 행위가 비슷한가?
-- 범행 동기, 수단, 결과가 유사한가?
-- 법적 쟁점이 비슷한가?
+[핵심 기준 — 단순 키워드 일치가 아닌, 사건의 법적 쟁점과 상황적 유사성을 중심으로 판단]
+- 법적 쟁점이 동일하거나 유사한가? (예: 둘 다 "불법행위에 기한 손해배상 책임"이 쟁점인가?)
+- 사건의 사실관계가 구조적으로 유사한가? (가해행위의 유형, 피해의 성격)
+- 가해자/피해자의 관계와 행위 패턴이 비슷한가?
+- 범행/위법행위의 동기, 수단, 결과가 유사한가?
+- 적용 법률과 법리가 공통되는가?
 
 [절대규칙] 판결/보상 정보는 텍스트에 명시된 것만. 없으면 "본문 확인 필요".
 
@@ -805,7 +846,7 @@ ${caseSummary||''}
 ${batch.join('\n\n')}`}
             ]})
         });
-        if(!r.ok) continue;
+        if(!r.ok) { log(`Rerank batch 실패: ${r.status}`); continue; }
         const d = await r.json();
         try{
             JSON.parse(cleanJson(d.choices[0].message.content.trim())).forEach(x=>{
@@ -825,12 +866,13 @@ async function handleSearch() {
     if(!input) return;
     userDescription = input;
     const btn = document.getElementById('btnSearch'); btn.disabled=true;
+    const searchTextarea = document.getElementById('searchInput'); searchTextarea.disabled=true;
     try {
         document.getElementById('guideSection').style.display='none';
         document.getElementById('bookmarkPanel').style.display='none';
         // Step 1: AI가 사건을 분석하고 검색 전략 수립
         setStep(1);
-        showLoading('AI가 사건을 분석하고 있습니다...');
+        showLoading('1단계: AI가 사건을 분석하고 검색 전략을 수립 중...');
         const analysis = await analyzeUserCase(input);
         if(!analysis){ btn.disabled=false; hideLoading(); return; }
 
@@ -840,8 +882,8 @@ async function handleSearch() {
 
         // Step 2: 다양한 검색어로 넓게 후보 수집
         await smartSearch(analysis, input);
-    } catch(err){ showError('분석 실패: '+err.message); hideLoading(); }
-    finally{ btn.disabled=false; }
+    } catch(err){ showError('분석 실패: '+(err.message || classifyError(err, err.status))); hideLoading(); }
+    finally{ btn.disabled=false; document.getElementById('searchInput').disabled=false; }
 }
 
 function handleDirectSearch() {
@@ -877,7 +919,7 @@ async function smartSearch(analysis, originalInput) {
     for(const term of queries){
         try{
             searched++;
-            showLoading(`사건 분석 완료 — 판례 수집 중 (${searched}/${queries.length}, ${all.size}건 발견)`);
+            showLoading(`2단계: 판례 수집 중 (${searched}/${queries.length}개 검색어, ${all.size}건 발견)`);
             (await searchSingle(oc,term)).forEach(item=>{
                 const k=item['판례일련번호']; if(k&&!all.has(k)) all.set(k,item);
             });
@@ -889,7 +931,7 @@ async function smartSearch(analysis, originalInput) {
 
     // Step 3: AI가 각 판례의 실제 내용을 읽고 사건 유사도 판단
     setStep(3);
-    showLoading(`AI가 ${all.size}건의 판례를 읽고 유사 사건을 찾고 있습니다...`);
+    showLoading(`3단계: AI가 ${all.size}건의 판례를 읽고 법적 쟁점 유사도를 비교 중...`);
     try{
         const caseSummary = analysis.summary || '';
         const ranked = await aiRerank(originalInput, Array.from(all.values()), caseSummary);
@@ -910,7 +952,17 @@ function renderResults(items, ai) {
     lastItems = items; lastAi = ai; currentSort = 'score';
     const sec = document.getElementById('resultsSection'), hdr = document.getElementById('resultsHeader'), list = document.getElementById('resultsList');
     sec.style.display = 'grid';
-    if(!items.length){ hdr.innerHTML=''; list.innerHTML='<div style="text-align:center;padding:3rem;color:var(--text-3)"><h3 style="margin-bottom:.3rem">검색 결과 없음</h3><p>다른 표현으로 검색해 보세요.</p></div>'; return; }
+    if(!items.length){
+        hdr.innerHTML='';
+        const suggestKeywords = ai?.searchQueries ? ai.searchQueries.slice(0, 4).map(q => `<span class="example-chip" style="margin:4px 2px;cursor:pointer" onclick="document.getElementById('searchInput').value='${q.replace(/'/g,"\\'")}';handleSearch()">${q}</span>`).join('') : '';
+        list.innerHTML=`<div style="text-align:center;padding:3rem;color:var(--text-3)">
+            <h3 style="margin-bottom:.5rem">검색 결과 없음</h3>
+            <p style="margin-bottom:1rem">해당 사건과 일치하는 판례를 찾지 못했습니다.</p>
+            ${suggestKeywords ? '<div style="margin-bottom:.75rem"><p style="font-size:.85rem;font-weight:600;color:var(--text-2);margin-bottom:.4rem">이런 키워드로 다시 검색해보세요:</p><div style="display:flex;flex-wrap:wrap;justify-content:center;gap:4px">' + suggestKeywords + '</div></div>' : ''}
+            <p style="font-size:.82rem;color:var(--text-3)">좀 더 구체적인 상황을 설명하거나, 법률 용어를 포함해 보세요.<br>예: "교통사고 음주운전 손해배상", "직장 부당해고 위로금"</p>
+        </div>`;
+        return;
+    }
 
     const highCount = items.filter(x=>(x._score||0)>=70).length;
     const midCount = items.filter(x=>{const s=x._score||0;return s>=50&&s<70}).length;
@@ -1036,16 +1088,29 @@ async function openDetailModal(data) {
 async function analyzeFullCase(fullText, userInput) {
     const key = localStorage.getItem('openaiKey');
     if(!key) throw new Error('No key');
-    const r = await fetch('https://api.openai.com/v1/chat/completions',{
-        method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${key}`},
-        body:JSON.stringify({model:'gpt-4o-mini',temperature:.1,max_tokens:800,messages:[
-            {role:'system',content:`판례 분석 전문가. [절대규칙] 텍스트에 명시된 정보만 사용. 없으면 "본문에 명시되지 않음".
+
+    async function attemptAnalyze() {
+        const r = await fetch('https://api.openai.com/v1/chat/completions',{
+            method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${key}`},
+            body:JSON.stringify({model:'gpt-4o-mini',temperature:.1,max_tokens:800,messages:[
+                {role:'system',content:`판례 분석 전문가. [절대규칙] 텍스트에 명시된 정보만 사용. 없으면 "본문에 명시되지 않음".
 JSON 응답: {"verdict":"판결결과","compensation":"배상정보","summary":"3줄요약"}`},
-            {role:'user',content:`사건설명: "${userInput}"\n\n판례전문:\n${fullText.slice(0,3000)}`}
-        ]})
-    });
-    if(!r.ok) throw new Error('fail');
-    return JSON.parse(cleanJson((await r.json()).choices[0].message.content.trim()));
+                {role:'user',content:`사건설명: "${userInput}"\n\n판례전문:\n${fullText.slice(0,3000)}`}
+            ]})
+        });
+        if(!r.ok) throw new Error('fail');
+        return JSON.parse(cleanJson((await r.json()).choices[0].message.content.trim()));
+    }
+
+    try {
+        return await attemptAnalyze();
+    } catch(err) {
+        if (err instanceof SyntaxError) {
+            log('판례 분석 JSON 파싱 실패, 재시도...');
+            return await attemptAnalyze();
+        }
+        throw err;
+    }
 }
 
 // ═══════════════════════════════════════
